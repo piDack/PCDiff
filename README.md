@@ -99,7 +99,7 @@ auto_layer_diff(layer, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0,'
 
        [AutoDiff] FAILED !!!
        [AutoDiff]     Diff found in `Forward  Stagy` in step: 0, net_id is 1 vs 1
-       [AutoDiff]     Type of layer is  : <class 'torch.nn.modules.linear.Linear'> vs <class 'paddle.nn.layer.common.Linear'>
+       [AutoDiff]     Type of layer is  :  <class 'paddle.nn.layer.common.Linear'>
 
 
        Paddle Stacks:
@@ -126,7 +126,7 @@ auto_layer_diff(layer, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0,'
        [AutoDiff] forward 4 steps compared.
        [AutoDiff] FAILED !!!
        [AutoDiff]     Diff found in `Backward Stagy` in step: 0, net_id is 2 vs 2
-       [AutoDiff]     Type of layer is  : <class 'torch.nn.modules.linear.Linear'> vs <class 'paddle.nn.layer.common.Linear'>
+       [AutoDiff]     Type of layer is  :  <class 'paddle.nn.layer.common.Linear'>
 
 
        Paddle Stacks:
