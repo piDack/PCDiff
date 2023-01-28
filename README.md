@@ -6,15 +6,6 @@
 PCDiff是基于PaddlePaddle专用于不同硬件平台的模型精度对齐工具。传入Paddle模型，PCDiff将对不同硬件训练过程中的所有中间结果以及训练后的模型权重进行对齐检查，并以调用栈的形式提示模型第一次出现精度diff的位置。
 
 
-## 安装
-```
-pip install pcdiff
-```
-
-尝鲜版或开发者推荐如下命令安装：
-```
-pip install -e .
-```
 ## 使用说明
 
 ### auto_layer_diff 使用接口与参数说明
@@ -147,10 +138,3 @@ auto_layer_diff(layer, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0,'
                      x3 = self.linear2(x)
               ...
        ```
-## 调试建议
-
-如果遇到了 auto_layer_diff 函数提示某个 layer 没有对齐，可以考虑如下几个 debug 建议：
-
-- 如果不是上述的问题，那么可以考虑进行debug，比如构造最小复现样例或者是pdb调试等等。
-
-- 如果上述无法解决您的问题，或者认为找不到问题，可以考虑给本仓库提一个Issue。
