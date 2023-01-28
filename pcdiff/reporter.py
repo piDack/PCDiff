@@ -13,10 +13,9 @@
 # limitations under the License.
 
 import contextlib
-
-from .actions import get_action
-from .stack_info import print_frames
-from .utils import (
+from actions import get_action
+from stack_info import print_frames
+from utils import (
     TableView,
     TreeView,
     clone_structure,
@@ -24,7 +23,6 @@ from .utils import (
     for_each_tensor,
     log,
 )
-
 
 class Counter:
     def __init__(self):
@@ -37,8 +35,7 @@ class Counter:
         ret = self.id
         self.id += 1
         return ret
-
-
+    
 class ReportItem:
     def __init__(self, type, step, input, output, net, net_id, frame_info, frames):
         assert type in [
@@ -102,13 +99,12 @@ class ReportItem:
         strings.append("    step_idx: {}".format(self.step))
         return "\n".join(strings)
 
-
 class Report:
     def __init__(self, name):
         self.name = name
         self.items = []
         self.counter = None
-
+    
     def put_item(self, type, input, output, net, net_id, frame_info, frames):
         step = self.counter.get_id()
         self.items.append(
@@ -129,6 +125,10 @@ class Report:
         sorted(self.items, key=lambda x: x.step)
         return list(filter(lambda x: x.type == "forward", self.items))
 
+    def get_bwd_items(self):
+        sorted(self.items, key=lambda x: x.step)
+        return list(filter(lambda x: x.type == "backward", self.items))
+
     def find_item(self, p_report, net_id):
         tlist = list(filter(lambda x: x.type == "forward" and x.net_id == net_id, self.items))
         plist = list(filter(lambda x: x.type == "forward" and x.net_id == net_id, p_report.items))
@@ -144,33 +144,23 @@ class Report:
         for item in self.items:
             strings.append("    " + str(item.step) + ": [{}]".format(type(item.net)))
         return "\n".join(strings)
+    
 
-
-global_torch_report = None
 global_paddle_report = None
-global_torch_counter = Counter()
 global_paddle_counter = Counter()
 
-
 @contextlib.contextmanager
-def report_guard(torch_report, paddle_report):
-    global global_torch_report, global_paddle_report
-    old_t = global_torch_report
+def report_guard(paddle_report):
+    global global_paddle_report
     old_p = global_paddle_report
     try:
-        global_torch_report = torch_report
         global_paddle_report = paddle_report
-        torch_report.counter = global_torch_counter
         paddle_report.counter = global_paddle_counter
-        torch_report.counter.clear()
         paddle_report.counter.clear()
         yield
     finally:
-        global_torch_report = old_t
         global_paddle_report = old_p
-        torch_report.counter = None
         paddle_report.counter = None
-
 
 def current_paddle_report():
     if global_paddle_report is None:
@@ -179,70 +169,58 @@ def current_paddle_report():
         )
     return global_paddle_report
 
-
-def current_torch_report():
-    if global_torch_report is None:
+def current_paddle_cpu_report():
+    if global_paddle_cpu_report is None:
         raise RuntimeError(
-            "Please call `current_torch_report()` within contextmanager `report_guard(Report(), Report())`."
+            "Please call `current_paddle_cpu_report()` within contextmanager `report_guard(Report(), Report())`."
         )
-    return global_torch_report
+    return global_paddle_cpu_report
 
 
-def print_info(paddle_item, torch_item, exc, step_idx, grad=False):
+def print_info(paddle_item, exc, step_idx, grad=False):
     log("FAILED !!!")
     if grad:
         log(
-            "    Diff found in `Backward Stage` in step: {}, net_id is {} vs {}".format(
-                step_idx, paddle_item.net_id, torch_item.net_id
+            "    Diff found in `Backward Stage` in step: {}, net_id is {}".format(
+                step_idx, paddle_item.net_id
             )
         )
     else:
         log(
-            "    Diff found in `Forward  Stage` in step: {}, net_id is {} vs {}".format(
-                step_idx, paddle_item.net_id, torch_item.net_id
+            "    Diff found in `Forward  Stage` in step: {}, net_id is {}".format(
+                step_idx, paddle_item.net_id 
             )
         )
-    log("    Type of layer is  : {} vs {}".format(type(torch_item.net), type(paddle_item.net)))
+    log("    Type of layer is  : {}".format(type(paddle_item.net)))
     print(str(exc))
 
     print("\n\nPaddle Stacks:")
     print("=========================")
     paddle_item.print_stacks()
-    print("Torch  Stacks:")
-    print("=========================")
-    torch_item.print_stacks()
-
 
 def check_forward_and_backward(torch_rep, paddle_rep, cfg):
-    """
-    TODO(@xiongkun):
-    More abundant printing methods can be supported later，For example, interactive printing mode，Tree Printing mode，Currently, only list printing is supported.
-    """
     torch_fwd_items = torch_rep.get_fwd_items()
     paddle_fwd_items = paddle_rep.get_fwd_items()
-    torch_fwd_items = TableView(torch_fwd_items, lambda x: x.net_id)
+    print(paddle_fwd_items)
+    paddle_bwd_items = paddle_rep.get_bwd_items()
+    torch_tree_view = TreeView(torch_fwd_items)
     paddle_tree_view = TreeView(paddle_fwd_items)
-
-    assert len(torch_fwd_items) == len(
-        paddle_fwd_items
-    ), "Difference length of torch_fwd_items and paddle_items, make sure the paddle layer and torch module have the same valid sublayer."
 
     backward_items = []
     # forward check
-    for idx, paddle_item in enumerate(paddle_tree_view.traversal_forward()):
-        assert paddle_item.net_id in torch_fwd_items, "Torch has no corresponding module for {}".format(
-            type(paddle_item.net)
-        )
+    for idx, paddle_item in enumerate(paddle_fwd_items[::-1]):
+        print(paddle_item.step)
         torch_item = torch_fwd_items[paddle_item.net_id]
-        assert torch_item.type == paddle_item.type and paddle_item.type == "forward"
+        paddle_item = paddle_fwd_items[paddle_item.net_id]
+        assert torch_item.type == "forward" and paddle_item.type == "forward"
         act = get_action(torch_item.net, paddle_item.net)
         try:
-            backward_items.append([torch_item.bwd_item, paddle_item.bwd_item])
+            backward_items.append([torch_item.bwd_item,paddle_item.bwd_item])
             act(torch_item, paddle_item, cfg)
         except Exception as e:
             if cfg["single_step"]:
                 log("Under single_step mode:")
-            print_info(paddle_item, torch_item, e, idx, grad=False)
+            print_info(paddle_item, e, idx, grad=False)
             return False
 
     log("forward {} steps compared.".format(len(paddle_fwd_items)))
@@ -254,20 +232,20 @@ def check_forward_and_backward(torch_rep, paddle_rep, cfg):
 
     # backward check
     # backward_map map from id(paddle_backward_item) to torch_backward_item
-    backward_map = TableView(backward_items, lambda x: id(x[1]))
+    backward_map = TableView(backward_items, lambda x: x[1].step)
     """
     TODO(xiongkun): the order is problematic because we consider the tree structure as a chain structure.
           so, always the root layer is calculated first. but we want the first layer with diff.
 
     """
-    for idx, paddle_item in enumerate(paddle_tree_view.traversal_backward()):
-        torch_item, paddle_item = backward_map[id(paddle_item.bwd_item)]
-        assert torch_item.type == paddle_item.type and paddle_item.type == "backward"
+    for idx, paddle_item in enumerate(paddle_bwd_items[::-1]):
+        torch_item,paddle_item = backward_map[paddle_item.step]
+        assert torch_item.type == "backward" and paddle_item.type == "backward"
         act = get_action(torch_item.net, paddle_item.net)
         try:
             act(torch_item, paddle_item, cfg)
         except Exception as e:
-            print_info(paddle_item, torch_item, e, idx, grad=True)
+            print_info(paddle_item, e, idx, grad=True)
             return False
 
     log("bacward {} steps compared.".format(len(backward_items)))

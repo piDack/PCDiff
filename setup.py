@@ -15,7 +15,7 @@
 
 from setuptools import find_packages, setup
 
-import padiff
+import pcdiff
 
 
 def read_requirements_file(filepath):
@@ -24,21 +24,21 @@ def read_requirements_file(filepath):
     return requirements
 
 
-REQUIRED_PACKAGES = read_requirements_file("requirements.txt")
+REQUIRED_PACKAGES = read_requirements_file("requirements-dev.txt")
 
 
 setup(
-    name="padiff",
-    version=padiff.__version__,
-    description=("A tools to automatically diff precision between Paddle and Pytorch Model."),
+    name="pcdiff",
+    version=pcdiff.__version__,
+    description=("A tools to automatically diff precision between Paddle CPU and other custom device."),
     long_description="",
-    url="https://github.com/PaddlePaddle/PaDiff",
+    url="https://github.com/piDack/PCDiff",
     author="PaddlePaddle Author",
     author_email="",
     install_requires=REQUIRED_PACKAGES,
     packages=find_packages(),
     include_package_data=True,
-    data_files=[("padiff/configs", ["padiff/configs/assign_weight.yaml"])],
+    data_files=[("pcdiff/configs", ["pcdiff/configs/assign_weight.yaml"])],
     include_data_files=True,
     python_requires=">=3.7",
     classifiers=[
@@ -50,5 +50,5 @@ setup(
         "Operating System :: OS Independent",
     ],
     license="Apache 2.0",
-    keywords=("padiff automatically diff precision between paddle and pytorch model"),
+    keywords=("pcdiff automatically diff precision between paddle cpu and other custom device"),
 )

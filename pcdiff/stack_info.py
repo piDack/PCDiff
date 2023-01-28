@@ -16,7 +16,6 @@ import os.path as osp
 import traceback
 
 import paddle
-import torch
 
 
 def _is_system_package(filename):
@@ -24,7 +23,6 @@ def _is_system_package(filename):
         "lib/python",
         "/usr/local",
         osp.dirname(paddle.__file__),
-        osp.dirname(torch.__file__),
         osp.dirname(__file__),  # exclude padiff
     ]
     for pattern in exclude:
@@ -51,7 +49,6 @@ def extract_frame_summary():
     """
     extract the current call stack by traceback module.
     gather the call information and put them into ReportItem to helper locate the error.
-
     frame_summary:
         line: line of the code
         lineno: line number of the file

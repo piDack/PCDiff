@@ -1,15 +1,14 @@
-# PaDiff
-**P**addle **Auto**matically **Diff** precision toolkits.
+# PCDiff
+**P**addle **C**ustomDevice **Diff** precision toolkits which is forked from [PaDiff](https://github.com/PaddlePaddle/PaDiff) repo.
 
 
 ## 简介
-PaDiff是基于PaddlePaddle与PyTorch的模型精度对齐工具。传入Paddle与Torch模型，PaDiff将对训练过程中的所有中间结果以及训练后的模型权重进行对齐检查，并以调用栈的形式提示模型第一次出现精度diff的位置。
+PCDiff是基于PaddlePaddle专用于不同硬件平台的模型精度对齐工具。传入Paddle模型，PCDiff将对不同硬件训练过程中的所有中间结果以及训练后的模型权重进行对齐检查，并以调用栈的形式提示模型第一次出现精度diff的位置。
 
 
 ## 安装
-PaDiff v0.1 版本将于近期发布，届时可通过如下命令安装：
 ```
-pip install padiff
+pip install pcdiff
 ```
 
 尝鲜版或开发者推荐如下命令安装：
@@ -18,19 +17,15 @@ pip install -e .
 ```
 ## 使用说明
 
-### auto_diff 使用接口与参数说明
+### auto_layer_diff 使用接口与参数说明
 
-接口函数签名：`auto_diff(layer, module, example_inp, auto_weights=True, layer_mapping={}, options={})`
+接口函数签名：`auto_layer_diff(layer, example_inp, auto_weights=True, options={})`
 
 -   layer：传入paddle模型
 
--   module：传入torch模型
+-   example_inp：传入输入的样例数据，样例数据为paddle tensor类型。
 
--   example_inp：传入输入的样例数据，样例数据包含 ( paddle_input, torch_input ) 的结构，其中paddle_input和torch_input是一个dict，包含了需要传入给对应的layer和module的name到value的映射，即最后调用时使用 layer(**paddle_input) 的形式。注意顺序，paddle在前torch在后。
-
--   auto_weights: 是否使用随机数值统一初始化paddle与torch模型，默认为True
-
--   layer_mapping: 指定paddle与torch的layer映射关系，当模型结构无法完全对齐时需要通过此参数指定layer的映射关系。
+-   auto_weights: 是否使用随机数值统一初始化paddle custom device与cpu模型，默认为True
 
 -   options：一个传递参数的字典
 
@@ -38,22 +33,23 @@ pip install -e .
 
        -   "rtol": 相对精度误差上限，默认值为 `1e-7`
 
+       -   "plat": 精度对比平台，默认值为 `npu`
+
        -   "diff_phase": `"both"|"forward"`默认为`"both"`。设置为`"both"`时，工具将比较前反向的diff；当设置为`forward`时，仅比较前向diff，且会跳过模型的backward计算过程。
 
        -   "compare_mode": `"mean"|"strict"`默认为`"mean"`。`"mean"`表示使用Tensor间误差的均值作为对齐标准；`"strict"`表示对Tensor进行逐数据（Elementwise）的对齐检查。
 
-       -   "single_step": `True|False` 默认为 `False`。设置为`True`开启单步对齐模式，paddle模型中每一个sublayer的input由torch模型中对应的input对齐，可以避免层间误差累积。注意：开启single_step后将不会触发backward过程，"diff_phase"参数将被强制设置为`"forward"`。
+       -   "single_step": `True|False` 默认为 `False`。设置为`True`开启单步对齐模式，paddle模型中每一个sublayer的input由cpu paddle模型中对应的input对齐，可以避免层间误差累积。注意：开启single_step后将不会触发backward过程，"diff_phase"参数将被强制设置为`"forward"`。
 
 ### 注意事项与用例代码：
 
--   在使用auto_diff时，需要传入paddle模型与torch模型，在模型定义时，需要将forward中所使用的子模型在`__init__`函数中定义，并保证其中的子模型定义顺序一致，具体可见下方示例代码
+-   在使用auto_layer_diff时，需要传入paddle模型，在模型定义时，需要将forward中所使用的子模型在`__init__`函数中定义，并保证其中的子模型定义顺序一致，具体可见下方示例代码
 
 ```py
-from padiff import auto_diff
-import torch
+from pcdiff import auto_layer_diff
 import paddle
 
-# 使用paddle与torch定义相同结构的模型: SimpleLayer 和 SimpleModule
+# 使用paddle定义模型: SimpleLayer 
 # 样例模型结构为:
 #       x -> linear1 -> x -> relu -> x -> add -> linear2 -> output
 #       |                                  |
@@ -75,34 +71,16 @@ class SimpleLayer(paddle.nn.Layer):
         x = self.linear2(x)
         return x
 
-class SimpleModule(torch.nn.Module):
-    def __init__(self):
-        super(SimpleModule, self).__init__()
-        self.linear1 = torch.nn.Linear(100, 100)
-        self.linear2 = torch.nn.Linear(100, 10)
-        self.act = torch.nn.ReLU()
-
-    def forward(self, x):
-        resdual = x
-        x = self.linear1(x)
-        x = self.act(x)
-        x = x + resdual
-        x = self.linear2(x)
-        return x
-
-
 layer = SimpleLayer()
-module = SimpleModule()
 inp = paddle.rand((100, 100)).numpy().astype("float32")
-inp = ({'x': paddle.to_tensor(inp)},  ## <-- 注意顺序，paddle_input, torch_input 的形式。
-       {'y': torch.as_tensor(inp) })
-auto_diff(layer, module, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0, 'compare_mode': 'strict', 'single_step':False})
+inp = paddle.to_tensor(inp)  ## <-- 注意顺序，paddle_input, torch_input 的形式。
+auto_layer_diff(layer, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0,'plat':'npu', 'compare_mode': 'strict', 'single_step':False})
 ```
 
 ## 输出信息示例
 
 -   正确对齐时的输出信息：
-    auto_diff将输出paddle与torch模型输出结果之间的最大diff值
+    auto_diff将输出paddle与cpu-paddle模型输出结果之间的最大diff值
 
        ```
        [AutoDiff] Start auto_diff, may need a while to generate reports...
@@ -119,7 +97,7 @@ auto_diff(layer, module, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0
        -   训练后，模型权重以及梯度的对齐情况，具体信息将记录在当前路径的diff_log文件夹下
        -   注意，每次调用auto_diff后，diff_log下的报告会被覆盖
        -   在训练过程中首先出现diff的位置（在forward过程或backward过程）
-       -   paddle与torch的调用栈，可以追溯到第一次出现不对齐的代码位置
+       -   paddle的调用栈，可以追溯到第一次出现不对齐的代码位置
 
        ```
        [AutoDiff] Start auto_diff, may need a while to generate reports...
@@ -139,14 +117,6 @@ auto_diff(layer, module, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0
               File /workspace/env/env3.7/lib/python3.7/site-packages/paddle/fluid/dygraph/layers.py: 1022    __call__
                      return self._dygraph_call_func(*inputs, **kwargs)
               File pptest.py: 37    forward
-                     x = self.linear1(x)
-              ...
-       Torch  Stacks:
-       =========================
-              ...
-              File /workspace/env/env3.7/lib/python3.7/site-packages/torch/nn/modules/module.py: 1151    _call_impl
-                     hook_result = hook(self, input, result)
-              File pptest.py: 58    forward
                      x = self.linear1(x)
               ...
        ```
@@ -176,37 +146,10 @@ auto_diff(layer, module, inp, auto_weights=True, options={'atol': 1e-4, 'rtol':0
               File pptest.py: 52    forward
                      x3 = self.linear2(x)
               ...
-       Torch  Stacks:
-       =========================
-              ...
-              File /workspace/env/env3.7/lib/python3.7/site-packages/torch/nn/modules/module.py: 1151    _call_impl
-                     hook_result = hook(self, input, result)
-              File pptest.py: 66    forward
-                     x3 = self.linear2(x)
-              ...
        ```
 ## 调试建议
 
-如果遇到了 auto_diff 函数提示某个 layer 没有对齐，可以考虑如下几个 debug 建议：
-
-- 如果报告不是上述的Success或者是Failed，那么说明模型没有满足预定的假设。可以结合 报错信息 进行分析。常见问题是：Torch 模型和 Paddle 模型没有满足Layer定义的一一对应假设。可以通过 print 两个模型来进行假设验证，一个满足一一对应的例子应该如下图（Layer的名字可以不用相同）![e11cd8bfbcdaf5e19a3894cecd22d212](https://user-images.githubusercontent.com/16025309/209917443-e5c21829-f4a6-4bdf-a621-b123c11e83d6.jpg)
-
-- 如果显示精度有diff，先分析Paddle和Torch的调用栈，找到对应的源码并分析他们在逻辑上是否是对应的Layer，如果不是对应的Layer，那么说明 Torch 模型和 Paddle 模型没有满足Layer定义的一一对应假设。如图 <img width="875" alt="3d569899c42f69198f398540dec89012" src="https://user-images.githubusercontent.com/16025309/209917231-717c8e88-b3d8-41bc-b6a9-0330d0d9ed50.png">
-
-- 如果模型没有满足Layer定义的一一对应假设，可以通过`layer_mapping`指定Layer的映射关系。例如下图中共有三个SubLayer没有一一对齐，因此需要通过`layer_mapping`指定三个地方的映射关系。 如图 <img width="788" alt="image" src="https://user-images.githubusercontent.com/40840292/212643420-b30d5d6f-3a26-4a41-8dc2-7b3e6622c1d5.png">
-
-       ```python
-       layer = SimpleLayer()
-       module = SimpleModule()
-
-       layer_mapping = {
-       layer.transformer.encoder.layers[0].self_attn: module.transformer.encoder.layers[0].self_attn,
-       layer.transformer.decoder.layers[0].self_attn: module.transformer.decoder.layers[0].self_attn,
-       layer.transformer.decoder.layers[0].cross_attn: module.transformer.decoder.layers[0].multihead_attn,
-       } # object pair的形式
-
-       auto_diff(layer, module, inp, auto_weights=False, layer_mapping=layer_mapping, options={"atol": 1e-4})
-       ```
+如果遇到了 auto_layer_diff 函数提示某个 layer 没有对齐，可以考虑如下几个 debug 建议：
 
 - 如果不是上述的问题，那么可以考虑进行debug，比如构造最小复现样例或者是pdb调试等等。
 

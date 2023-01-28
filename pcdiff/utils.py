@@ -21,12 +21,11 @@ from itertools import zip_longest
 
 import numpy as np
 import paddle
-import torch
 from paddle.fluid.layers.utils import flatten, pack_sequence_as, map_structure
 
 
 def is_tensor(x):
-    return isinstance(x, (paddle.Tensor, torch.Tensor))
+    return isinstance(x, (paddle.Tensor))
 
 
 def is_tensors(*x):
@@ -67,42 +66,11 @@ def for_each_grad_tensor(*structure):
         yield ts
 
 
-def map_for_each_weight(fn, layer, module):
-    """
-    Automatically fill weights by randn.
-    """
-    for paddle_sublayer, torch_submodule in zip_longest(layer.sublayers(True), module.modules(), fillvalue=None):
-        if paddle_sublayer is None or torch_submodule is None:
-            raise RuntimeError("Torch and Paddle return difference number of sublayers. Check your model.")
-        for (name, paddle_param), torch_param in zip(
-            paddle_sublayer.named_parameters("", False),
-            torch_submodule.parameters(False),
-        ):
-            fn(paddle_sublayer, torch_submodule, name, paddle_param, torch_param)
-
-
-def map_for_each_sublayer(fn, layer, module):
-    """
-    Automatically fill weights by randn.
-    """
-    for paddle_sublayer, torch_submodule in zip(layer.sublayers(True), module.modules()):
-        fn(paddle_sublayer, torch_submodule)
-
-
-def map_structure_and_replace_key(func, structure1, structure2):
-    """
-    Apply `func` to each entry in `structure` and return a new structure.
-    """
-    flat_structure = [flatten(s) for s in structure1]
-    entries = zip(*flat_structure)
-    return pack_sequence_as(structure2, [func(*x) for x in entries])
-
-
 def _clone_tensor(inp):
     """
     clone into cpu to save GPU memory.
     """
-    if isinstance(inp, (torch.Tensor, paddle.Tensor)):
+    if isinstance(inp, (paddle.Tensor)):
         new_t = inp.detach().cpu().clone()
         if is_require_grad(inp):
             set_require_grad(new_t)
@@ -129,48 +97,23 @@ def clone_structure(inputs):
     """
     return map_structure(_clone_tensor, inputs)
 
+def map_structure_and_replace_key(func, structure1, structure2):
+    """
+    Apply `func` to each entry in `structure` and return a new structure.
+    """
+    flat_structure = [flatten(s) for s in structure1]
+    entries = zip(*flat_structure)
+    return pack_sequence_as(structure2, [func(*x) for x in entries])
 
 def is_sublayer(father_net, child_net):
     """
     return True if child_net is the DIRECTL children of father_net.
     """
-
-    def _is_sublayer(father_net, child_net, layer_type):
-
-        for child in father_net.children():
-            check_list = child if isinstance(child, layer_type["layer_list"]) else [child]
-            for l in check_list:
-                if isinstance(l, layer_type["sequential"]):
-                    if _is_sublayer(l, child_net, layer_type):
-                        return True
-                else:
-                    if id(l) == id(child_net):
-                        return True
-        return False
-
-    if isinstance(father_net, torch.nn.Module) and isinstance(child_net, torch.nn.Module):
-        layer_type = {
-            "sequential": torch.nn.Sequential,
-            "layer_list": torch.nn.ModuleList,
-        }
-        if _is_sublayer(father_net, child_net, layer_type):
-            return True
-        return False
-    elif isinstance(father_net, paddle.nn.Layer) and isinstance(child_net, paddle.nn.Layer):
-        layer_type = {
-            "sequential": paddle.nn.Sequential,
-            "layer_list": paddle.nn.LayerList,
-        }
-        if _is_sublayer(father_net, child_net, layer_type):
-            return True
-        return False
-    else:
-        raise RuntimeError("father net is not Module / Layer")
-
+    pass
 
 def traversal_layers(net, layer_mapping):
     for child in net.children():
-        if not (isinstance(child, torch.nn.Sequential) or isinstance(child, paddle.nn.Sequential)):
+        if not isinstance(child, paddle.nn.Sequential):
             yield child
         ignore_sublayer = False
         for key, val in layer_mapping.items():
@@ -292,19 +235,13 @@ def clean_log_dir():
 
 def tensors_mean(inp, mode):
     """
-    TODO(wuzhanfei): This function is used to calcu loss in same way for paddle layer and torch module
+    TODO(wuzhanfei): This function is used to calcu loss in same way for paddle layer 
     need to support real opt later
     """
-    if isinstance(inp, torch.Tensor) or isinstance(inp, paddle.Tensor):
+    if isinstance(inp, paddle.Tensor):
         return inp.mean()
 
-    if mode == "torch":
-        means = []
-        for t in for_each_tensor(inp):
-            means.append(t[0].mean())
-        loss = torch.stack(means).mean()
-        return loss
-    elif mode == "paddle":
+    if mode == "paddle":
         means = []
         for t in for_each_tensor(inp):
             means.append(t[0].mean())
@@ -332,7 +269,7 @@ def max_diff(paddle_output, torch_output):
 
 
 def log(*args):
-    print("[AutoDiff]", *args)
+    print("[PCDiff]", *args)
 
 
 def compare_tensor(tensor1, tensor2, atol=0, rtol=1e-7, compare_mode="mean"):
@@ -365,11 +302,13 @@ def init_options(options):
     default_options = {
         "atol": 0,
         "rtol": 1e-7,
+        "plat": "npu",
         "diff_phase": "both",
         "compare_mode": "mean",
         "single_step": False,
         "debug": False,
         "cmd": False,
+        "loss": "cross_entropy",
     }
 
     for key in default_options.keys():
@@ -379,12 +318,6 @@ def init_options(options):
     if options["single_step"]:
         options["diff_phase"] = "forward"
         log("In single_step mode, diff_phase is set to `forward`.")
-
-    log("Your options:")
-    print("{")
-    for key in options.keys():
-        print("  {}: `{}`".format(key, options[key]))
-    print("}")
 
 
 def modify_layer_mapping(layer_mapping):

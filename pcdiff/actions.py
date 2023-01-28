@@ -1,3 +1,5 @@
+
+
 # Copyright (c) 2022 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,8 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .utils import assert_tensor_equal
-import torch
+from utils import assert_tensor_equal
 import paddle
 
 
@@ -57,7 +58,7 @@ class Action:
 class EqualAction(Action):
     def match(self, torch_net, paddle_net):
         try:
-            assert isinstance(torch_net, torch.nn.Module)
+            assert isinstance(torch_net, paddle.nn.Layer)
             assert isinstance(paddle_net, paddle.nn.Layer)
         except:
             return False
@@ -80,7 +81,7 @@ class EqualAction(Action):
         for (tt,), (pt,) in zip(torch_tensors, paddle_tensors):
             try:
                 assert_tensor_equal(
-                    tt.detach().numpy(),
+                    tt.numpy(),
                     pt.numpy(),
                     atol=atol,
                     compare_mode=compare_mode,
